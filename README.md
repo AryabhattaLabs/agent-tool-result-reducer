@@ -1,10 +1,12 @@
-# agent-tool-result-reducer
+# Agent Tool Result Reducer
 
 [![CI](https://github.com/AryabhattaLabs/agent-tool-result-reducer/actions/workflows/ci.yml/badge.svg)](https://github.com/AryabhattaLabs/agent-tool-result-reducer/actions/workflows/ci.yml)
 ![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 
 Shrink large JSON tool results for LLM agents **without silently losing data**.
+
+**Package:** `agent-tool-result-reducer` · **Import:** `tool_result_reducer`
 
 A zero-dependency Python library that fits an API/tool response into a
 character budget by **selecting fields, dropping the widest fields, and cutting

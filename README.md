@@ -1,4 +1,4 @@
-# Agent Tool Result Reducer
+# Agent Tool Result Reducer: Fit Large JSON Tool Results into an LLM Agent's Context Window
 
 [![CI](https://github.com/AryabhattaLabs/agent-tool-result-reducer/actions/workflows/ci.yml/badge.svg)](https://github.com/AryabhattaLabs/agent-tool-result-reducer/actions/workflows/ci.yml)
 ![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)

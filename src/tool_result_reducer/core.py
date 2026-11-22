@@ -599,6 +599,7 @@ def reduce_tool_result(
     *,
     select: Any = None,
     budget: int = DEFAULT_RESULT_BUDGET,
+    max_overshoot: int = 0,
     messages: Messages = DEFAULT_MESSAGES,
 ) -> ReducedResult:
     """Bound a tool result to what the agent can use, and say what was left out.
@@ -612,11 +613,16 @@ def reduce_tool_result(
             Applied whenever supplied, not only when the payload is oversized:
             a caller that knows which fields it consumes should not pay for
             the rest on every later turn.
-        budget: Maximum characters for ``ReducedResult.text``. It is never
-            exceeded while more than one item is kept. One item is always
-            kept, so a single item larger than the budget still exceeds it,
-            and a budget under about 1,000 characters has no room for the
-            ``_meta`` block.
+        budget: Maximum characters for ``ReducedResult.text``. One item is
+            always kept, so the budget is exceeded only when the first item
+            alone does not fit. A budget under about 1,000 characters has no
+            room for the ``_meta`` block.
+        max_overshoot: Characters the result may run over ``budget`` before
+            an item is dropped to bring it back. The default, 0, holds the
+            budget exactly. The size of the ``_meta`` block is estimated
+            while filling, so a result can land a few dozen characters over;
+            a small allowance (say 200) keeps the item that strict mode would
+            drop for the sake of those characters.
         messages: Instructions written into the result for the model.
     """
     raw_text = payload if isinstance(payload, str) else _dumps(payload)
@@ -628,6 +634,7 @@ def reduce_tool_result(
     chars_raw = len(raw_text)
     fields = parse_select(select)
     budget = max(1, int(budget or DEFAULT_RESULT_BUDGET))
+    limit = budget + max(0, int(max_overshoot or 0))
 
     if chars_raw <= budget and not fields:
         return ReducedResult(
@@ -782,14 +789,21 @@ def reduce_tool_result(
             break
         room = max(1, room - (len(text) - budget))
 
-    # The passes above usually land inside the budget. When they do not, keep
-    # the largest number of whole items that does: the text grows with every
-    # item kept, so a binary search finds it in a few renders.
-    if len(text) > budget and len(kept) > 1:
-        low, high, fits = 1, len(kept) - 1, 1
+    # The passes above usually land inside the budget. When they do not (by
+    # more than the caller allows), keep the largest number of whole items
+    # that does: the text grows with every item kept, so a binary search finds
+    # it in a few renders. If even one item cannot fit, the budget is out of
+    # reach and dropping the others would lose data for nothing, so the result
+    # is left as it is.
+    if (
+        len(text) > limit
+        and len(kept) > 1
+        and len(render(projected[:1], fields_dropped)[0]) <= limit
+    ):
+        low, high, fits = 2, len(kept) - 1, 1
         while low <= high:
             middle = (low + high) // 2
-            if len(render(projected[:middle], fields_dropped)[0]) <= budget:
+            if len(render(projected[:middle], fields_dropped)[0]) <= limit:
                 fits, low = middle, middle + 1
             else:
                 high = middle - 1

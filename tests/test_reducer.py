@@ -162,7 +162,8 @@ def test_invariants_hold_for_random_payloads():
         if isinstance(out, dict) and "_meta" in out:
             assert out["_meta"]["items_included"] == len(out["items"]) == r.items_included
             assert out["_meta"]["complete"] is r.complete
-        # The budget holds whenever more than one item is kept.
+        # The budget holds whenever more than one item is kept. (The one
+        # exception, a first item that alone exceeds it, has its own test.)
         assert len(r.text) <= budget or r.items_included <= 1, (budget, len(r.text), r.items_included)
 
 
@@ -179,6 +180,46 @@ def test_budget_is_met_when_the_refit_passes_fall_short():
             r = reduce_tool_result(payload, budget=12_000, select=select)
             if r.items_included and r.items_included > 1:
                 assert len(r.text) <= 12_000, (seed, len(r.text), r.items_included)
+
+
+def test_max_overshoot_keeps_the_item_strict_mode_would_drop():
+    # The same seeds as above. Strict mode drops one item to get back under
+    # the budget; an allowance of 200 characters keeps it.
+    import random
+
+    differed = 0
+    for seed in (1, 2, 5):
+        rng = random.Random(seed)
+        for _ in range(60):
+            payload = _random_payload(rng)
+            select = rng.choice([None, "items.id,items.name"])
+            strict = reduce_tool_result(payload, budget=12_000, select=select)
+            lenient = reduce_tool_result(payload, budget=12_000, select=select, max_overshoot=200)
+            if strict.items_included == lenient.items_included:
+                assert strict.text == lenient.text
+                continue
+            differed += 1
+            assert lenient.items_included == strict.items_included + 1
+            assert len(strict.text) <= 12_000 < len(lenient.text) <= 12_200
+            json.loads(lenient.text)
+    assert differed == 3  # one case per seed
+
+
+def test_items_are_not_dropped_when_the_first_one_alone_is_over_budget():
+    # With a long runtime-specific warning, the first item plus the _meta block
+    # is already over the budget. Dropping the second item cannot bring the
+    # result back under it, so it is kept.
+    import random
+
+    long_warning = Messages(incomplete="Read the stored response instead. " * 20)
+    rng = random.Random(28)
+    for _ in range(11):
+        payload = _random_payload(rng)
+        select = rng.choice([None, "items.id,items.name"])
+    r = reduce_tool_result(payload, budget=12_000, select=select, messages=long_warning)
+    assert r.items_included == 2 and r.items_available == 28
+    assert 12_000 < len(r.text) < 12_100
+    assert json.loads(r.text)["_meta"]["items_included"] == 2
 
 
 # ── text that is not ASCII ─────────────────────────────────────────────

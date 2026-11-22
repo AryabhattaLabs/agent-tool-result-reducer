@@ -145,7 +145,7 @@ result = reduce_tool_result(raw, "crm.search", messages=msgs)
 
 | Name | Purpose |
 |---|---|
-| `reduce_tool_result(payload, tool_name="tool", *, select=None, budget=12000, messages=Messages())` | Main entry point. Returns `ReducedResult`. |
+| `reduce_tool_result(payload, tool_name="tool", *, select=None, budget=12000, max_overshoot=0, messages=Messages())` | Main entry point. Returns `ReducedResult`. |
 | `ReducedResult` | `.text` (for the model), `.raw` (original), `.complete`, `.items_included`, `.items_available`, `.total_reported`, `.fields_dropped`, `.select_error`, `.outlined`, `.fallback_char_cut`, `.summary()`, `.log_fields()` |
 | `Messages` | Model-facing text templates (`incomplete`, `fields_dropped`, `outline`, `char_cut`). |
 | `parse_select`, `project`, `available_paths_for`, `projection_matched_nothing`, `repair_envelope_prefix` | The building blocks, exposed for callers that project data outside an agent loop (e.g. ETL steps). |
@@ -181,9 +181,15 @@ See [`examples/basic.py`](examples/basic.py).
   make one informed follow-up; twenty items with all fields forces it to guess
   what it's missing.
 - **Existence, not value.** `null` is an answer; a missing path is a mistake.
-- **The budget holds while more than one item is kept.** At least one item is
-  always kept, so a single item larger than the budget still exceeds it. A
+- **The budget is strict by default.** At least one item is always kept, so
+  the budget is exceeded only when the first item alone does not fit. A
   bounded cut of one record would be worse than a slightly larger whole one.
+- **You can allow a small overshoot.** The size of the `_meta` block is
+  estimated while filling, so a result sometimes lands a few dozen characters
+  over, and strict mode then drops a whole item to get back under.
+  `max_overshoot=200` keeps that item and accepts a result up to 200
+  characters over the budget. Use it when the budget is a cost target; keep
+  the default when it is a hard limit.
 - **Budgets under about 1,000 characters are too small.** The `_meta` block
   itself needs several hundred characters, so the result will exceed them.
 - **Text is kept as written.** Non-ASCII text (Hindi, Japanese, emoji) is

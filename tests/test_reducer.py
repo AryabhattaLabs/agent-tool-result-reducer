@@ -109,6 +109,21 @@ def test_summary_line():
     assert r.summary("crm.search").startswith("crm.search: INCOMPLETE")
 
 
+def test_summary_counts_items_when_select_fits():
+    payload = {"results": companies(30), "total": 412}
+    r = reduce_tool_result(payload, "crm.search", select="id,name", budget=8_000)
+    assert r.complete and not r.fields_dropped
+    assert r.summary("crm.search") == (
+        "crm.search: complete, agent received 30 of 30 items "
+        "(source reports 412 in total), selected fields: id, name"
+    )
+
+
+def test_summary_for_pass_through():
+    r = reduce_tool_result({"ok": True}, "ping")
+    assert r.summary("ping") == f"ping: complete ({len(r.text):,} chars)"
+
+
 # ── invariants, checked over many random payloads ──────────────────────
 
 

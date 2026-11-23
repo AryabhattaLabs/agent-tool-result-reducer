@@ -1,6 +1,7 @@
 # Agent Tool Result Reducer: Fit Large JSON Tool Results into an LLM Agent's Context Window
 
 [![CI](https://github.com/AryabhattaLabs/agent-tool-result-reducer/actions/workflows/ci.yml/badge.svg)](https://github.com/AryabhattaLabs/agent-tool-result-reducer/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/agent-tool-result-reducer)](https://pypi.org/project/agent-tool-result-reducer/)
 ![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 
@@ -24,10 +25,10 @@ After:   {"items":[…25 whole items…],"_meta":{"items_included":25,"items_ava
 ## Install
 
 ```bash
-pip install git+https://github.com/AryabhattaLabs/agent-tool-result-reducer
+pip install agent-tool-result-reducer
 ```
 
-Requires Python 3.10+. No runtime dependencies. Not yet on PyPI.
+Requires Python 3.10+. No runtime dependencies.
 
 ## Quick start
 
@@ -216,7 +217,7 @@ See [`examples/basic.py`](examples/basic.py).
       whole items, budget) and non-ASCII text
 - [x] CI (tests on 3.10–3.15)
 - [ ] More tests: deep nesting, very wide objects
-- [ ] Publish to PyPI
+- [x] Published on PyPI
 - [ ] Examples for the OpenAI, Anthropic and LangChain tool loops
 - [ ] Optional token-based budget via a pluggable length function
 

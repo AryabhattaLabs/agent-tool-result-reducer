@@ -53,7 +53,7 @@ The model is told what happened, in the result itself:
           "total_reported_by_source": 443, "fields_dropped": {"description": 4017}, ...}
 ```
 
-More in [Usage](#usage) and [`examples/basic.py`](examples/basic.py).
+More in [Usage](#usage) and [Examples](#examples).
 
 ## Objective
 
@@ -156,7 +156,25 @@ result = reduce_tool_result(raw, "crm.search", messages=msgs)
 | `resolve(item, path)`, `MISSING` | Reads a dot-path from one item. Returns `MISSING` when the path is absent, and `None` when it exists and is null. |
 | `available_paths(item, depth=2)` | The dot-paths that can be selected on one item. |
 
-See [`examples/basic.py`](examples/basic.py).
+## Examples
+
+Each agent-loop example runs the same task against a stand-in search tool
+([`examples/demo_tool.py`](examples/demo_tool.py)) whose result is about
+108,000 characters. The reducer is a one-line change in each: the model gets
+all 30 companies in about 5,400 characters, told which fields were dropped.
+
+| File | Where the reducer goes | Install |
+|---|---|---|
+| [`basic.py`](examples/basic.py) | No model: what the reducer does to a payload | nothing else |
+| [`openai_tool_loop.py`](examples/openai_tool_loop.py) | Before the `role: "tool"` message, in a Chat Completions loop | `openai` |
+| [`anthropic_tool_loop.py`](examples/anthropic_tool_loop.py) | Before the `tool_result` block, in a Messages API loop | `anthropic` |
+| [`langchain_tool.py`](examples/langchain_tool.py) | Inside the `@tool` function, so any LangChain agent gets the reduced text | `langchain langchain-openai` |
+
+```bash
+pip install agent-tool-result-reducer openai
+export OPENAI_API_KEY=...
+python examples/openai_tool_loop.py
+```
 
 ## Scope
 
@@ -174,8 +192,9 @@ See [`examples/basic.py`](examples/basic.py).
   `.raw`; caching and a "query the full payload" tool belong to your runtime.
 - **Token-exact budgets.** Characters are used deliberately; convert
   with your tokenizer's ratio if needed.
-- **Framework adapters** (LangChain, OpenAI Agents SDK, Claude Agent SDK) in
-  the core package — planned as thin examples, not dependencies.
+- **Framework adapters** in the core package. The OpenAI, Anthropic and
+  LangChain [examples](#examples) show the one line each needs; the package
+  stays free of dependencies.
 - Non-JSON formats (XML, CSV, HTML) beyond the plain character fallback.
 
 ## Design decisions
@@ -218,7 +237,7 @@ See [`examples/basic.py`](examples/basic.py).
 - [x] CI (tests on 3.10–3.15)
 - [ ] More tests: deep nesting, very wide objects
 - [x] Published on PyPI
-- [ ] Examples for the OpenAI, Anthropic and LangChain tool loops
+- [x] Examples for the OpenAI, Anthropic and LangChain tool loops
 - [ ] Optional token-based budget via a pluggable length function
 
 ## Development

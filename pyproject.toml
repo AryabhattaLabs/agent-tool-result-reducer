@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agent-tool-result-reducer"
-version = "0.2.1"
+version = "0.2.2"
 description = "Shrink large JSON tool results for LLM agents without silently losing data."
 readme = "README.md"
 requires-python = ">=3.10"

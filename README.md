@@ -166,7 +166,7 @@ all 30 companies in about 5,400 characters, told which fields were dropped.
 | File | Where the reducer goes | Install |
 |---|---|---|
 | [`basic.py`](examples/basic.py) | No model: what the reducer does to a payload | nothing else |
-| [`openai_tool_loop.py`](examples/openai_tool_loop.py) | Before the `role: "tool"` message, in a Chat Completions loop | `openai` |
+| [`openai_tool_loop.py`](examples/openai_tool_loop.py) | Before the `function_call_output` item, in a Responses API loop | `openai` |
 | [`anthropic_tool_loop.py`](examples/anthropic_tool_loop.py) | Before the `tool_result` block, in a Messages API loop | `anthropic` |
 | [`langchain_tool.py`](examples/langchain_tool.py) | Inside the `@tool` function, so any LangChain agent gets the reduced text | `langchain langchain-openai` |
 

@@ -6,7 +6,9 @@
 
 In LangChain the tool's return value is what the model sees, so the reducer
 goes inside the tool. Any chat model and any agent built on LangChain tools
-works the same way; `create_agent` with OpenAI is only the demo.
+works the same way; `create_agent` with OpenAI is only the demo. (Reasoning
+models such as gpt-6-luna take function tools on OpenAI's Responses API,
+hence `use_responses_api=True`.)
 """
 
 import json
@@ -15,12 +17,13 @@ from typing import Optional
 
 from langchain.agents import create_agent
 from langchain_core.tools import tool
+from langchain_openai import ChatOpenAI
 
 from demo_tool import TOOL_DESCRIPTION, TOOL_NAME, search_companies
 from tool_result_reducer import reduce_tool_result
 
 BUDGET = 8_000  # characters per tool result sent to the model
-MODEL = os.environ.get("LANGCHAIN_MODEL", "openai:gpt-6-luna")
+MODEL = os.environ.get("OPENAI_MODEL", "gpt-6-luna")
 
 
 @tool(TOOL_NAME, description=TOOL_DESCRIPTION)
@@ -39,7 +42,7 @@ def search_companies_tool(query: str, select: Optional[str] = None) -> str:
     return result.text
 
 
-agent = create_agent(MODEL, tools=[search_companies_tool])
+agent = create_agent(ChatOpenAI(model=MODEL, use_responses_api=True), tools=[search_companies_tool])
 state = agent.invoke(
     {
         "messages": [
@@ -52,4 +55,4 @@ state = agent.invoke(
 )
 
 print()
-print(state["messages"][-1].content)
+print(state["messages"][-1].text)

@@ -128,6 +128,13 @@ class Messages:
         "with the SAME arguments but set `select=` to ONLY an id field plus "
         "the dropped field(s)."
     )
+    # Placeholders: {count} items in this response, {total} the source's total.
+    more_at_source: str = (
+        "`complete` covers this response only. The source reports {total} in "
+        "total; the rest were never in it (e.g. later pages). Do not present "
+        "these {count} as the full set; fetch more only if the tool allows "
+        "(a page, offset or filter argument)."
+    )
     # Placeholder: {chars} original size, formatted with thousands separators.
     outline: str = (
         "This response is a single large object ({chars} chars), shown as a "
@@ -198,14 +205,17 @@ class ReducedResult:
 
     def summary(self, tool_name: str = "tool") -> str:
         """One line for humans (logs, run UIs) describing what was lost."""
-        if self.complete and not self.fields_dropped:
-            return f"{tool_name}: complete ({self.chars_kept:,} chars)"
         if self.items_available is not None and self.items_included is not None:
             scope = f"{self.items_included} of {self.items_available} items"
             if self.total_reported and self.total_reported > self.items_available:
                 scope += f" (source reports {self.total_reported:,} in total)"
+            if self.fields_kept:
+                scope += f", selected fields: {', '.join(self.fields_kept)}"
             if self.fields_dropped:
                 scope += f", dropped fields: {', '.join(sorted(self.fields_dropped))}"
+        elif self.complete:
+            # Passed through unchanged: no collection was located, nothing left out.
+            return f"{tool_name}: complete ({self.chars_kept:,} chars)"
         else:
             scope = f"{self.chars_kept:,} of {self.chars_raw:,} characters"
         state = "complete" if self.complete else "INCOMPLETE"
@@ -722,6 +732,10 @@ def reduce_tool_result(
         }
         if total_reported is not None and total_reported != len(items):
             meta["total_reported_by_source"] = total_reported
+            if total_reported > len(items):
+                meta["total_note"] = messages.more_at_source.format(
+                    count=len(items), total=f"{total_reported:,}"
+                )
         if source_path:
             meta["source_path"] = source_path
         if fields:

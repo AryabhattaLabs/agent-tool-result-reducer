@@ -40,7 +40,7 @@ response = {"results": rows, "total": 443}        # a page of 25 companies, abou
 
 result = reduce_tool_result(response, "crm.search", budget=4_000)
 
-result.text        # 1,259 characters of valid JSON: this is what goes to the model
+result.text        # 1,506 characters of valid JSON: this is what goes to the model
 result.complete    # True: all 25 items are there; the wide `description` field was dropped
 result.summary("crm.search")
 # crm.search: complete, agent received 25 of 25 items (source reports 443 in total), dropped fields: description
@@ -50,10 +50,12 @@ The model is told what happened, in the result itself:
 
 ```json
 "_meta": {"items_included": 25, "items_available": 25, "complete": true,
-          "total_reported_by_source": 443, "fields_dropped": {"description": 4017}, ...}
+          "total_reported_by_source": 443,
+          "total_note": "`complete` covers this response only. The source reports 443 in total; ...",
+          "fields_dropped": {"description": 4017}, ...}
 ```
 
-More in [Usage](#usage) and [`examples/basic.py`](examples/basic.py).
+More in [Usage](#usage) and [Examples](#examples).
 
 ## Objective
 
@@ -150,13 +152,31 @@ result = reduce_tool_result(raw, "crm.search", messages=msgs)
 |---|---|
 | `reduce_tool_result(payload, tool_name="tool", *, select=None, budget=12000, max_overshoot=0, messages=Messages())` | Main entry point. Returns `ReducedResult`. |
 | `ReducedResult` | `.text` (for the model), `.raw` (original), `.complete`, `.items_included`, `.items_available`, `.total_reported`, `.fields_dropped`, `.select_error`, `.outlined`, `.fallback_char_cut`, `.summary()`, `.log_fields()` |
-| `Messages` | Model-facing text templates (`incomplete`, `fields_dropped`, `outline`, `char_cut`). |
+| `Messages` | Model-facing text templates (`incomplete`, `fields_dropped`, `more_at_source`, `outline`, `char_cut`). |
 | `parse_select`, `project`, `available_paths_for`, `projection_matched_nothing`, `repair_envelope_prefix` | The building blocks, exposed for callers that project data outside an agent loop (e.g. ETL steps). |
 | `locate_collection(parsed)` | Finds the main list in an API response. Returns `(items, path, total_reported)`. |
 | `resolve(item, path)`, `MISSING` | Reads a dot-path from one item. Returns `MISSING` when the path is absent, and `None` when it exists and is null. |
 | `available_paths(item, depth=2)` | The dot-paths that can be selected on one item. |
 
-See [`examples/basic.py`](examples/basic.py).
+## Examples
+
+Each agent-loop example runs the same task against a stand-in search tool
+([`examples/demo_tool.py`](examples/demo_tool.py)) whose result is about
+108,000 characters. The reducer is a one-line change in each: the model gets
+all 30 companies in about 5,600 characters, told which fields were dropped.
+
+| File | Where the reducer goes | Install |
+|---|---|---|
+| [`basic.py`](examples/basic.py) | No model: what the reducer does to a payload | nothing else |
+| [`openai_tool_loop.py`](examples/openai_tool_loop.py) | Before the `function_call_output` item, in a Responses API loop | `openai` |
+| [`anthropic_tool_loop.py`](examples/anthropic_tool_loop.py) | Before the `tool_result` block, in a Messages API loop | `anthropic` |
+| [`langchain_tool.py`](examples/langchain_tool.py) | Inside the `@tool` function, so any LangChain agent gets the reduced text | `langchain langchain-openai` |
+
+```bash
+pip install agent-tool-result-reducer openai
+export OPENAI_API_KEY=...
+python examples/openai_tool_loop.py
+```
 
 ## Scope
 
@@ -174,8 +194,9 @@ See [`examples/basic.py`](examples/basic.py).
   `.raw`; caching and a "query the full payload" tool belong to your runtime.
 - **Token-exact budgets.** Characters are used deliberately; convert
   with your tokenizer's ratio if needed.
-- **Framework adapters** (LangChain, OpenAI Agents SDK, Claude Agent SDK) in
-  the core package — planned as thin examples, not dependencies.
+- **Framework adapters** in the core package. The OpenAI, Anthropic and
+  LangChain [examples](#examples) show the one line each needs; the package
+  stays free of dependencies.
 - Non-JSON formats (XML, CSV, HTML) beyond the plain character fallback.
 
 ## Design decisions
@@ -218,7 +239,7 @@ See [`examples/basic.py`](examples/basic.py).
 - [x] CI (tests on 3.10–3.15)
 - [ ] More tests: deep nesting, very wide objects
 - [x] Published on PyPI
-- [ ] Examples for the OpenAI, Anthropic and LangChain tool loops
+- [x] Examples for the OpenAI, Anthropic and LangChain tool loops
 - [ ] Optional token-based budget via a pluggable length function
 
 ## Development

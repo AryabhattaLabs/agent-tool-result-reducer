@@ -252,7 +252,8 @@ pytest
 ## Feedback and contributing
 
 - **Bugs and requests:** [open an issue](https://github.com/AryabhattaLabs/agent-tool-result-reducer/issues).
-- **Design questions** (for example, whether the budget should be in tokens): start or join a thread in
+- **Design questions** (for example, whether the budget should be in tokens): join the
+  [feedback thread](https://github.com/AryabhattaLabs/community/discussions/4), or start your own in
   [Design reviews](https://github.com/AryabhattaLabs/community/discussions/categories/design-reviews).
 - **Pull requests** are welcome; see [CONTRIBUTING](https://github.com/AryabhattaLabs/.github/blob/main/CONTRIBUTING.md).
 

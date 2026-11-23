@@ -161,16 +161,16 @@ result = reduce_tool_result(raw, "crm.search", messages=msgs)
 ## Examples
 
 Each agent-loop example runs the same task against a stand-in search tool
-([`examples/demo_tool.py`](examples/demo_tool.py)) whose result is about
+([`examples/demo_tool.py`](https://github.com/AryabhattaLabs/agent-tool-result-reducer/blob/main/examples/demo_tool.py)) whose result is about
 108,000 characters. The reducer is a one-line change in each: the model gets
 all 30 companies in about 5,600 characters, told which fields were dropped.
 
 | File | Where the reducer goes | Install |
 |---|---|---|
-| [`basic.py`](examples/basic.py) | No model: what the reducer does to a payload | nothing else |
-| [`openai_tool_loop.py`](examples/openai_tool_loop.py) | Before the `function_call_output` item, in a Responses API loop | `openai` |
-| [`anthropic_tool_loop.py`](examples/anthropic_tool_loop.py) | Before the `tool_result` block, in a Messages API loop | `anthropic` |
-| [`langchain_tool.py`](examples/langchain_tool.py) | Inside the `@tool` function, so any LangChain agent gets the reduced text | `langchain langchain-openai` |
+| [`basic.py`](https://github.com/AryabhattaLabs/agent-tool-result-reducer/blob/main/examples/basic.py) | No model: what the reducer does to a payload | nothing else |
+| [`openai_tool_loop.py`](https://github.com/AryabhattaLabs/agent-tool-result-reducer/blob/main/examples/openai_tool_loop.py) | Before the `function_call_output` item, in a Responses API loop | `openai` |
+| [`anthropic_tool_loop.py`](https://github.com/AryabhattaLabs/agent-tool-result-reducer/blob/main/examples/anthropic_tool_loop.py) | Before the `tool_result` block, in a Messages API loop | `anthropic` |
+| [`langchain_tool.py`](https://github.com/AryabhattaLabs/agent-tool-result-reducer/blob/main/examples/langchain_tool.py) | Inside the `@tool` function, so any LangChain agent gets the reduced text | `langchain langchain-openai` |
 
 ```bash
 pip install agent-tool-result-reducer openai

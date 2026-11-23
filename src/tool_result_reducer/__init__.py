@@ -31,4 +31,4 @@ __all__ = [
     "repair_envelope_prefix",
     "resolve",
 ]
-__version__ = "0.2.2"
+__version__ = "0.2.3"

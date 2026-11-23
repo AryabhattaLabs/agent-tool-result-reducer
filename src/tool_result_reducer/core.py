@@ -128,6 +128,13 @@ class Messages:
         "with the SAME arguments but set `select=` to ONLY an id field plus "
         "the dropped field(s)."
     )
+    # Placeholders: {count} items in this response, {total} the source's total.
+    more_at_source: str = (
+        "`complete` covers this response only. The source reports {total} in "
+        "total; the rest were never in it (e.g. later pages). Do not present "
+        "these {count} as the full set; fetch more only if the tool allows "
+        "(a page, offset or filter argument)."
+    )
     # Placeholder: {chars} original size, formatted with thousands separators.
     outline: str = (
         "This response is a single large object ({chars} chars), shown as a "
@@ -725,6 +732,10 @@ def reduce_tool_result(
         }
         if total_reported is not None and total_reported != len(items):
             meta["total_reported_by_source"] = total_reported
+            if total_reported > len(items):
+                meta["total_note"] = messages.more_at_source.format(
+                    count=len(items), total=f"{total_reported:,}"
+                )
         if source_path:
             meta["source_path"] = source_path
         if fields:

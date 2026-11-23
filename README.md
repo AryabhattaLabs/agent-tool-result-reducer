@@ -40,7 +40,7 @@ response = {"results": rows, "total": 443}        # a page of 25 companies, abou
 
 result = reduce_tool_result(response, "crm.search", budget=4_000)
 
-result.text        # 1,259 characters of valid JSON: this is what goes to the model
+result.text        # 1,506 characters of valid JSON: this is what goes to the model
 result.complete    # True: all 25 items are there; the wide `description` field was dropped
 result.summary("crm.search")
 # crm.search: complete, agent received 25 of 25 items (source reports 443 in total), dropped fields: description
@@ -50,7 +50,9 @@ The model is told what happened, in the result itself:
 
 ```json
 "_meta": {"items_included": 25, "items_available": 25, "complete": true,
-          "total_reported_by_source": 443, "fields_dropped": {"description": 4017}, ...}
+          "total_reported_by_source": 443,
+          "total_note": "`complete` covers this response only. The source reports 443 in total; ...",
+          "fields_dropped": {"description": 4017}, ...}
 ```
 
 More in [Usage](#usage) and [Examples](#examples).
@@ -150,7 +152,7 @@ result = reduce_tool_result(raw, "crm.search", messages=msgs)
 |---|---|
 | `reduce_tool_result(payload, tool_name="tool", *, select=None, budget=12000, max_overshoot=0, messages=Messages())` | Main entry point. Returns `ReducedResult`. |
 | `ReducedResult` | `.text` (for the model), `.raw` (original), `.complete`, `.items_included`, `.items_available`, `.total_reported`, `.fields_dropped`, `.select_error`, `.outlined`, `.fallback_char_cut`, `.summary()`, `.log_fields()` |
-| `Messages` | Model-facing text templates (`incomplete`, `fields_dropped`, `outline`, `char_cut`). |
+| `Messages` | Model-facing text templates (`incomplete`, `fields_dropped`, `more_at_source`, `outline`, `char_cut`). |
 | `parse_select`, `project`, `available_paths_for`, `projection_matched_nothing`, `repair_envelope_prefix` | The building blocks, exposed for callers that project data outside an agent loop (e.g. ETL steps). |
 | `locate_collection(parsed)` | Finds the main list in an API response. Returns `(items, path, total_reported)`. |
 | `resolve(item, path)`, `MISSING` | Reads a dot-path from one item. Returns `MISSING` when the path is absent, and `None` when it exists and is null. |

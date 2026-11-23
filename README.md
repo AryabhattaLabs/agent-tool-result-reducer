@@ -163,7 +163,7 @@ result = reduce_tool_result(raw, "crm.search", messages=msgs)
 Each agent-loop example runs the same task against a stand-in search tool
 ([`examples/demo_tool.py`](examples/demo_tool.py)) whose result is about
 108,000 characters. The reducer is a one-line change in each: the model gets
-all 30 companies in about 5,400 characters, told which fields were dropped.
+all 30 companies in about 5,600 characters, told which fields were dropped.
 
 | File | Where the reducer goes | Install |
 |---|---|---|

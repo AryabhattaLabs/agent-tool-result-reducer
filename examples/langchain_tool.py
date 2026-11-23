@@ -20,7 +20,7 @@ from demo_tool import TOOL_DESCRIPTION, TOOL_NAME, search_companies
 from tool_result_reducer import reduce_tool_result
 
 BUDGET = 8_000  # characters per tool result sent to the model
-MODEL = os.environ.get("LANGCHAIN_MODEL", "openai:gpt-5.4-mini")
+MODEL = os.environ.get("LANGCHAIN_MODEL", "openai:gpt-6-luna")
 
 
 @tool(TOOL_NAME, description=TOOL_DESCRIPTION)

@@ -17,7 +17,7 @@ from demo_tool import TOOL_DESCRIPTION, TOOL_NAME, TOOL_PARAMETERS, search_compa
 from tool_result_reducer import reduce_tool_result
 
 BUDGET = 8_000  # characters per tool result sent to the model
-MODEL = os.environ.get("OPENAI_MODEL", "gpt-5.4-mini")
+MODEL = os.environ.get("OPENAI_MODEL", "gpt-6-luna")
 
 client = OpenAI()
 tools = [

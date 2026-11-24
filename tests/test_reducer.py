@@ -299,6 +299,61 @@ def test_nested_page_total_is_still_found():
     assert r.total_reported == 443
 
 
+# ── pagination fields (issue #9) ───────────────────────────────────────
+
+
+def test_cursor_reaches_the_model_when_the_whole_page_is_included():
+    payload = {"results": companies(11), "total": 443, "next_cursor": "abc123", "has_more": True}
+    r = reduce_tool_result(payload, budget=12_000)
+    meta = json.loads(r.text)["_meta"]
+    assert r.complete and meta["items_included"] == 11
+    assert meta["source_paging"] == {"next_cursor": "abc123", "has_more": True}
+    assert "next page" in meta["paging_note"]
+    assert r.paging == {"next_cursor": "abc123", "has_more": True}
+    assert len(r.text) <= 12_000
+
+
+def test_cursor_is_withheld_from_the_model_when_part_of_the_page_was_dropped():
+    # The fixture from the feedback thread: following the cursor here would
+    # skip B and C for good, so only the caller gets it.
+    payload = {
+        "results": [{"id": "A", "text": "a"}, {"id": "B", "text": "x" * 5000}, {"id": "C", "text": "c"}],
+        "total": 12,
+        "next_cursor": "abc123",
+    }
+    r = reduce_tool_result(payload, budget=1800)
+    meta = json.loads(r.text)["_meta"]
+    assert not r.complete and meta["items_included"] == 1
+    assert "source_paging" not in meta and "abc123" not in r.text
+    assert r.paging == {"next_cursor": "abc123"}
+
+
+def test_nested_paging_fields_keep_their_path_and_null_means_last_page():
+    payload = {
+        "data": {"items": companies(11), "pagination": {"next_page_token": None, "limit": 11}},
+        "links": {"next": "https://api.example.com/items?page=2"},
+    }
+    r = reduce_tool_result(payload, budget=12_000)
+    assert json.loads(r.text)["_meta"]["source_paging"] == {
+        "data.pagination.next_page_token": None,
+        "data.pagination.limit": 11,
+        "links.next": "https://api.example.com/items?page=2",
+    }
+
+
+def test_a_very_long_cursor_is_left_to_the_caller():
+    long_cursor = "c" * 2000
+    payload = {"results": companies(11), "next_cursor": long_cursor, "has_more": True}
+    r = reduce_tool_result(payload, budget=12_000)
+    assert json.loads(r.text)["_meta"]["source_paging"] == {"has_more": True}
+    assert r.paging["next_cursor"] == long_cursor
+
+
+def test_no_paging_block_without_paging_fields():
+    r = reduce_tool_result({"results": companies(11), "total": 443}, budget=12_000)
+    assert "source_paging" not in json.loads(r.text)["_meta"] and r.paging == {}
+
+
 # ── building blocks used outside reduce_tool_result ────────────────────
 
 

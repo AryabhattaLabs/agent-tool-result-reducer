@@ -97,7 +97,7 @@ For each tool result, in order:
 | 4. Guard the select | A select that matches **no** field on any item is discarded (full items shown, plus the list of valid paths). A select written against the envelope (`items.id`) is repaired automatically. A field that exists but is `null` still counts as a match. | A wrong select must never produce an empty result labelled "complete". |
 | 5. Auto-fit fields | Still too big → drop the **widest fields across all items** (measured, deterministic) until every item fits, down to a floor of 2 fields. | The model can't see the budget; dropping a known-expensive field beats making it guess through extra LLM turns. |
 | 6. Cut on item boundaries | Still too big → keep as many **whole** items as fit. | Never broken JSON, never half a record. |
-| 7. Annotate | Wrap in `{"items": [...], "_meta": {...}}` with counts, source totals, dropped fields with per-item cost, the top 3 most expensive fields, and an explicit warning when incomplete. | The model, your logs and your UI all see the same truth. |
+| 7. Annotate | Wrap in `{"items": [...], "_meta": {...}}` with counts, source totals, dropped fields with per-item cost, the top 3 most expensive fields, and an explicit warning when incomplete. The source's pagination fields (`next_cursor`, `has_more`, `links.next`, …) go in `_meta.source_paging` only when every item of the page is included. | The model, your logs and your UI all see the same truth. A cursor points past the whole page, so following it from a partial page would skip the items left out. |
 | Fallbacks | A large single object → **structure outline** (every key visible, long strings cut, nested containers summarised; still valid JSON). Non-JSON text → character cut with a clear marker. | Even non-collections degrade honestly. |
 
 ## Usage
@@ -151,8 +151,8 @@ result = reduce_tool_result(raw, "crm.search", messages=msgs)
 | Name | Purpose |
 |---|---|
 | `reduce_tool_result(payload, tool_name="tool", *, select=None, budget=12000, max_overshoot=0, messages=Messages())` | Main entry point. Returns `ReducedResult`. |
-| `ReducedResult` | `.text` (for the model), `.raw` (original), `.complete`, `.items_included`, `.items_available`, `.total_reported`, `.fields_dropped`, `.select_error`, `.outlined`, `.fallback_char_cut`, `.summary()`, `.log_fields()` |
-| `Messages` | Model-facing text templates (`incomplete`, `fields_dropped`, `more_at_source`, `outline`, `char_cut`). |
+| `ReducedResult` | `.text` (for the model), `.raw` (original), `.complete`, `.items_included`, `.items_available`, `.total_reported`, `.fields_dropped`, `.select_error`, `.outlined`, `.fallback_char_cut`, `.paging` (the source's pagination fields, even when withheld from the model), `.summary()`, `.log_fields()` |
+| `Messages` | Model-facing text templates (`incomplete`, `fields_dropped`, `more_at_source`, `paging`, `outline`, `char_cut`). |
 | `parse_select`, `project`, `available_paths_for`, `projection_matched_nothing`, `repair_envelope_prefix` | The building blocks, exposed for callers that project data outside an agent loop (e.g. ETL steps). |
 | `locate_collection(parsed)` | Finds the main list in an API response. Returns `(items, path, total_reported)`. |
 | `resolve(item, path)`, `MISSING` | Reads a dot-path from one item. Returns `MISSING` when the path is absent, and `None` when it exists and is null. |
@@ -216,6 +216,10 @@ python examples/openai_tool_loop.py
   the default when it is a hard limit.
 - **Budgets under about 1,000 characters are too small.** The `_meta` block
   itself needs several hundred characters, so the result will exceed them.
+- **The cursor reaches the model only with a whole page.** When some of the
+  page's items were left out, `_meta` has no cursor and the warning asks for a
+  narrower call instead. Your code still gets the pagination fields on
+  `ReducedResult.paging`.
 - **Text is kept as written.** Non-ASCII text (Hindi, Japanese, emoji) is
   measured and returned as real characters, not as `\u` escapes.
 - **No dependencies.** Standard library only, so it fits any stack.

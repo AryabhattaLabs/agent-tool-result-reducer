@@ -87,6 +87,33 @@ _TOTAL_KEYS = (
     "count",
 )
 
+# Keys that conventionally carry pagination state in an API envelope. When a
+# result is rebuilt as {"items", "_meta"} these would otherwise be lost, and
+# with them the model's only way to ask for the next page. "page" and "count"
+# are absent on purpose: they are often containers or totals (see above).
+_PAGING_KEYS = (
+    "next_cursor",
+    "nextCursor",
+    "next_page_token",
+    "nextPageToken",
+    "next_page",
+    "nextPage",
+    "next_offset",
+    "nextOffset",
+    "next",
+    "has_more",
+    "hasMore",
+    "has_next",
+    "hasNext",
+    "offset",
+    "limit",
+)
+# Envelope objects that commonly hold the paging keys.
+_PAGING_CONTAINERS = ("page", "pagination", "meta", "paging", "links", "cursor")
+# A paging value longer than this is not offered to the model (a cursor that
+# would crowd out items); the caller still gets it on ReducedResult.paging.
+_PAGING_VALUE_CHARS = 500
+
 # How deep to look for the collection. Three levels covers
 # {"data": {"result": {"items": [...]}}} without wandering into item bodies.
 _MAX_SEARCH_DEPTH = 3
@@ -135,6 +162,12 @@ class Messages:
         "these {count} as the full set; fetch more only if the tool allows "
         "(a page, offset or filter argument)."
     )
+    paging: str = (
+        "Every item of this page is included. `source_paging` holds the "
+        "source's pagination fields as it sent them; to get the next page, "
+        "call this tool again with the SAME arguments plus the page or cursor "
+        "argument the tool takes, set from these values."
+    )
     # Placeholder: {chars} original size, formatted with thousands separators.
     outline: str = (
         "This response is a single large object ({chars} chars), shown as a "
@@ -178,6 +211,13 @@ class ReducedResult:
     # field -> approx chars/item removed by auto-fit. Non-empty means every
     # item IS included (complete=True) but these fields were dropped.
     fields_dropped: Dict[str, int] = field(default_factory=dict)
+    # The source envelope's pagination fields (dot-path -> value), e.g.
+    # {"next_cursor": "abc"}. Set whenever a collection was rebuilt, even
+    # when they are kept from the model because only part of the page was
+    # included: following a cursor past a partial page would skip the omitted
+    # items. Empty when the result passed through unchanged (the model then
+    # has the original envelope).
+    paging: Dict[str, Any] = field(default_factory=dict)
 
     @property
     def items_dropped(self) -> int:
@@ -493,6 +533,40 @@ def _first_total(container: Any) -> Optional[int]:
     return None
 
 
+def _paging_fields(parsed: Any, source_path: Optional[str]) -> Dict[str, Any]:
+    """The envelope's pagination fields, as ``{dot-path: scalar value}``.
+
+    Looked for beside the collection and at the top of the response, and one
+    level down in the usual containers (``pagination``, ``meta``, ``links``,
+    ...). Only scalars are kept; ``None`` is kept too, because
+    ``"next_cursor": null`` is how many APIs say there are no more pages.
+    """
+    if not isinstance(parsed, dict):
+        return {}
+    owner_path = source_path.rsplit(".", 1)[0] if source_path and "." in source_path else ""
+    owners = [owner_path] if owner_path else []
+    owners.append("")
+    found: Dict[str, Any] = {}
+
+    def take(container: Any, prefix: str) -> None:
+        if not isinstance(container, dict):
+            return
+        for key in _PAGING_KEYS:
+            if key in container:
+                value = container[key]
+                if value is None or isinstance(value, (str, int, float, bool)):
+                    found.setdefault(f"{prefix}{key}", value)
+
+    for path in owners:
+        owner = parsed if not path else _resolve(parsed, path)
+        prefix = f"{path}." if path else ""
+        take(owner, prefix)
+        if isinstance(owner, dict):
+            for name in _PAGING_CONTAINERS:
+                take(owner.get(name), f"{prefix}{name}.")
+    return found
+
+
 def _locate_collection(
     parsed: Any,
 ) -> Tuple[Optional[List[Any]], Optional[str], Optional[int]]:
@@ -657,6 +731,13 @@ def reduce_tool_result(
         parsed = None
 
     items, source_path, total_reported = _locate_collection(parsed)
+    paging = _paging_fields(parsed, source_path) if items is not None else {}
+    # Offered to the model only when short; see _PAGING_VALUE_CHARS.
+    paging_for_model = {
+        k: v
+        for k, v in paging.items()
+        if not (isinstance(v, str) and len(v) > _PAGING_VALUE_CHARS)
+    }
 
     if items is None:
         # Not a collection: a single large object, or not JSON at all.
@@ -738,6 +819,13 @@ def reduce_tool_result(
                 )
         if source_path:
             meta["source_path"] = source_path
+        # A cursor points past the whole page, so it is only safe to follow
+        # when the whole page is here; otherwise the omitted items would be
+        # skipped for good, and the `incomplete` warning asks for a narrower
+        # call instead.
+        if complete and paging_for_model:
+            meta["source_paging"] = paging_for_model
+            meta["paging_note"] = messages.paging
         if fields:
             # Only what actually survived auto-fit.
             meta["fields_selected"] = [
@@ -837,4 +925,5 @@ def reduce_tool_result(
         source_path=source_path,
         select_error=select_error,
         fields_dropped=fields_dropped,
+        paging=paging,
     )

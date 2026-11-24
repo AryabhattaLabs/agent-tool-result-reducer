@@ -128,6 +128,10 @@ _MAX_SEARCH_DEPTH = 3
 # explicit "incomplete" accounting is the better failure.
 _AUTO_FIT_MIN_FIELDS = 2
 
+# How many selectable paths a select_not_found note lists. It can recur on
+# every call (a declared field the source never sends), so it is kept short.
+_NOT_FOUND_PATHS = 20
+
 # How much of a long string survives in a structure outline.
 _OUTLINE_VALUE_CHARS = 200
 
@@ -166,6 +170,11 @@ class Messages:
         "total; the rest were never in it (e.g. later pages). Do not present "
         "these {count} as the full set; fetch more only if the tool allows "
         "(a page, offset or filter argument)."
+    )
+    # Placeholders: {fields} the missing paths, {available} paths that exist.
+    select_not_found: str = (
+        "Selected but on no item in this response, so null on every item: "
+        "{fields}. If a name was a guess, select from: {available}"
     )
     # Sent with every complete result that has paging fields, and re-sent on
     # every later turn, so it is kept short.
@@ -208,6 +217,11 @@ class ReducedResult:
     # Set when a supplied `select` matched no field on any item, so the
     # projection was discarded rather than served as an empty result.
     select_error: Optional[str] = None
+    # Selected paths found on no item while others matched. The items keep
+    # them as null (callers rely on a stable shape, and many APIs omit empty
+    # fields), but the model is told, so a misspelt name is not read as
+    # "value unknown".
+    select_not_found: List[str] = field(default_factory=list)
     # Set when the payload was not JSON and we fell back to cutting
     # characters: the one path that can hand the model broken syntax.
     fallback_char_cut: bool = False
@@ -246,6 +260,7 @@ class ReducedResult:
             "fallback_char_cut": self.fallback_char_cut or None,
             "outlined": self.outlined or None,
             "fields_dropped": len(self.fields_dropped) or None,
+            "select_not_found": len(self.select_not_found) or None,
         }
 
     def summary(self, tool_name: str = "tool") -> str:
@@ -258,6 +273,8 @@ class ReducedResult:
                 scope += f", selected fields: {', '.join(self.fields_kept)}"
             if self.fields_dropped:
                 scope += f", dropped fields: {', '.join(sorted(self.fields_dropped))}"
+            if self.select_not_found:
+                scope += f", fields not found: {', '.join(self.select_not_found)}"
         elif self.complete:
             # Passed through unchanged: no collection was located, nothing left out.
             return f"{tool_name}: complete ({self.chars_kept:,} chars)"
@@ -407,6 +424,23 @@ def projection_matched_nothing(items: Sequence[Any], fields: Sequence[str]) -> b
         if any(_resolve(item, path) is not _MISSING for path in fields):
             return False
     return saw_dict
+
+
+def paths_not_found(items: Sequence[Any], fields: Sequence[str]) -> List[str]:
+    """The selected paths that exist on no item, in the order given.
+
+    Existence, not value, as in :func:`projection_matched_nothing`: a path
+    that holds ``null`` on every item exists. Items that are not dicts are
+    skipped; with no dict items at all, nothing is reported missing.
+    """
+    dicts = [item for item in items if isinstance(item, dict)]
+    if not dicts:
+        return []
+    return [
+        path
+        for path in fields
+        if all(_resolve(item, path) is _MISSING for item in dicts)
+    ]
 
 
 def repair_envelope_prefix(
@@ -812,6 +846,11 @@ def reduce_tool_result(
         projected = list(items)
         fields = []
 
+    # Some selected paths matched and some are found on no item. Their nulls
+    # stay (a stable shape for callers; an API may omit empty fields), but the
+    # model is told, so a guessed name is not read as "value unknown".
+    select_not_found: List[str] = paths_not_found(items, fields) if fields else []
+
     def render(kept: List[Any], fields_dropped: Dict[str, int]) -> Tuple[str, bool]:
         """The finished text for these items, and whether it is complete."""
         complete = len(kept) == len(items)
@@ -851,6 +890,12 @@ def reduce_tool_result(
             )
         if select_error:
             meta["select_error"] = select_error
+        if select_not_found:
+            meta["select_not_found"] = select_not_found
+            meta["select_not_found_note"] = messages.select_not_found.format(
+                fields=", ".join(select_not_found),
+                available=", ".join(available_paths_for(items)[:_NOT_FOUND_PATHS]),
+            )
         if fields_dropped:
             names = sorted(fields_dropped)
             listed = ", ".join(names[:8]) + (" …" if len(names) > 8 else "")
@@ -933,6 +978,7 @@ def reduce_tool_result(
         fields_kept=list(fields),
         source_path=source_path,
         select_error=select_error,
+        select_not_found=select_not_found,
         fields_dropped=fields_dropped,
         paging=paging,
     )

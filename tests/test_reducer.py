@@ -66,6 +66,45 @@ def test_null_valued_field_counts_as_a_match():
     assert json.loads(r.text)["items"] == [{"stage": None}] * 3
 
 
+def test_select_field_found_on_no_item_is_reported():
+    # Issue #13: a model guessed `employee_count` for `employees` and read the
+    # nulls as "unknown". The item shape is kept (callers rely on it, and APIs
+    # often omit empty fields); the model is told.
+    rows = [{"name": f"Co {i}", "city": "Pune", "employees": 40 + i, "description": "x" * 1500} for i in range(10)]
+    r = reduce_tool_result({"results": rows}, select="name,city,employee_count", budget=12_000)
+    out = json.loads(r.text)
+    assert out["items"][0] == {"name": "Co 0", "city": "Pune", "employee_count": None}
+    assert out["_meta"]["select_not_found"] == ["employee_count"]
+    note = out["_meta"]["select_not_found_note"]
+    assert "employee_count" in note and "employees" in note
+    assert r.select_not_found == ["employee_count"] and r.select_error is None
+    assert "fields not found: employee_count" in r.summary()
+    assert r.log_fields()["select_not_found"] == 1
+
+
+def test_select_field_present_on_some_items_is_kept():
+    # A sparse field exists; items without it still get null, and nothing is reported missing.
+    rows = [{"id": i, "score": 5} if i % 2 else {"id": i} for i in range(6)]
+    r = reduce_tool_result({"results": rows}, select="id,score")
+    assert r.select_not_found == []
+    assert [item["score"] for item in json.loads(r.text)["items"]] == [None, 5, None, 5, None, 5]
+
+
+def test_select_field_that_exists_and_is_null_everywhere_is_kept():
+    rows = [{"id": i, "funding_stage": None} for i in range(5)]
+    r = reduce_tool_result({"results": rows}, select="id,funding_stage")
+    assert r.select_not_found == []
+    assert json.loads(r.text)["items"][0] == {"id": 0, "funding_stage": None}
+
+
+def test_paths_not_found_helper():
+    from tool_result_reducer import paths_not_found
+
+    rows = [{"a": {"b": 1}}, {"a": {"c": None}}]
+    assert paths_not_found(rows, ["a.b", "a.c", "a.d", "x"]) == ["a.d", "x"]
+    assert paths_not_found(["not", "dicts"], ["x"]) == []
+
+
 def test_envelope_prefix_in_select_is_repaired():
     r = reduce_tool_result({"items": companies(3, 10)}, select="items.id,items.name")
     meta = json.loads(r.text)["_meta"]

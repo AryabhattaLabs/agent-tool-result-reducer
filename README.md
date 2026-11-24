@@ -94,7 +94,7 @@ For each tool result, in order:
 | 1. Pass-through | Under budget and no `select` → returned unchanged. | Zero overhead for the common case. |
 | 2. Locate the collection | Finds the main list of objects in the envelope (`data`, `items`, `results`, `content`, … up to 3 levels deep; longest list wins; JSON:API `data` beats `included`). Reads server totals (`total`, `totalElements`, `count`, `page.totalElements`, …). A page `size` is not read as a total. | Works with real-world API shapes without configuration, and lets the note say "25 of 443". |
 | 3. Project (`select`) | Keeps only the dot-paths requested (`id,summary.name`). Applied whenever given, not just when oversized. | Pay only for the fields you use, on every turn. |
-| 4. Guard the select | A select that matches **no** field on any item is discarded (full items shown, plus the list of valid paths). A select written against the envelope (`items.id`) is repaired automatically. A field that exists but is `null` still counts as a match. | A wrong select must never produce an empty result labelled "complete". |
+| 4. Guard the select | A select that matches **no** field on any item is discarded (full items shown, plus the list of valid paths). When only some selected paths are found on no item, they stay `null` (a stable shape; APIs often omit empty fields) and are listed in `_meta.select_not_found` with the valid paths. A select written against the envelope (`items.id`) is repaired automatically. A field that exists but is `null` still counts as a match. | A wrong select must never produce an empty result labelled "complete", and a misspelt field must not pass silently as `null`, which reads as "value unknown". |
 | 5. Auto-fit fields | Still too big → drop the **widest fields across all items** (measured, deterministic) until every item fits, down to a floor of 2 fields. | The model can't see the budget; dropping a known-expensive field beats making it guess through extra LLM turns. |
 | 6. Cut on item boundaries | Still too big → keep as many **whole** items as fit. | Never broken JSON, never half a record. |
 | 7. Annotate | Wrap in `{"items": [...], "_meta": {...}}` with counts, source totals, dropped fields with per-item cost, the top 3 most expensive fields, and an explicit warning when incomplete. The source's pagination fields go in `_meta.source_paging` only when every item of the page is included: values in the envelope (never in the items) whose names contain a paging word such as cursor, next, page, offset, after, more or done (`next_cursor`, `response_metadata.next_cursor`, `paging.next.after`, `pageInfo.endCursor`, `nextRecordsUrl`, …). | The model, your logs and your UI all see the same truth. A cursor points past the whole page, so following it from a partial page would skip the items left out. |
@@ -151,9 +151,9 @@ result = reduce_tool_result(raw, "crm.search", messages=msgs)
 | Name | Purpose |
 |---|---|
 | `reduce_tool_result(payload, tool_name="tool", *, select=None, budget=12000, max_overshoot=0, messages=Messages())` | Main entry point. Returns `ReducedResult`. |
-| `ReducedResult` | `.text` (for the model), `.raw` (original), `.complete`, `.items_included`, `.items_available`, `.total_reported`, `.fields_dropped`, `.select_error`, `.outlined`, `.fallback_char_cut`, `.paging` (the source's pagination fields, even when withheld from the model), `.summary()`, `.log_fields()` |
-| `Messages` | Model-facing text templates (`incomplete`, `fields_dropped`, `more_at_source`, `paging`, `outline`, `char_cut`). |
-| `parse_select`, `project`, `available_paths_for`, `projection_matched_nothing`, `repair_envelope_prefix` | The building blocks, exposed for callers that project data outside an agent loop (e.g. ETL steps). |
+| `ReducedResult` | `.text` (for the model), `.raw` (original), `.complete`, `.items_included`, `.items_available`, `.total_reported`, `.fields_dropped`, `.select_error`, `.select_not_found`, `.outlined`, `.fallback_char_cut`, `.paging` (the source's pagination fields, even when withheld from the model), `.summary()`, `.log_fields()` |
+| `Messages` | Model-facing text templates (`incomplete`, `fields_dropped`, `more_at_source`, `select_not_found`, `paging`, `outline`, `char_cut`). |
+| `parse_select`, `project`, `available_paths_for`, `projection_matched_nothing`, `paths_not_found`, `repair_envelope_prefix` | The building blocks, exposed for callers that project data outside an agent loop (e.g. ETL steps). |
 | `locate_collection(parsed)` | Finds the main list in an API response. Returns `(items, path, total_reported)`. |
 | `resolve(item, path)`, `MISSING` | Reads a dot-path from one item. Returns `MISSING` when the path is absent, and `None` when it exists and is null. |
 | `available_paths(item, depth=2)` | The dot-paths that can be selected on one item. |
@@ -204,7 +204,8 @@ python examples/openai_tool_loop.py
 - **Fields before items.** Twenty-five items with fewer fields lets the model
   make one informed follow-up; twenty items with all fields forces it to guess
   what it's missing.
-- **Existence, not value.** `null` is an answer; a missing path is a mistake.
+- **Existence, not value.** `null` is an answer; a missing path is a mistake,
+  so a selected path found on no item is reported, not passed silently as `null`.
 - **The budget is strict by default.** At least one item is always kept, so
   the budget is exceeded only when the first item alone does not fit. A
   bounded cut of one record would be worse than a slightly larger whole one.

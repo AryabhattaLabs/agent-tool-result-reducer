@@ -341,6 +341,48 @@ def test_nested_paging_fields_keep_their_path_and_null_means_last_page():
     }
 
 
+def _page(n=20):
+    return [{"id": i, "name": f"n{i}", "bio": "x" * 900} for i in range(n)]
+
+
+# How real APIs return pagination state, and what must reach the model.
+REAL_API_PAGING = {
+    "slack": ({"ok": True, "members": _page(), "response_metadata": {"next_cursor": "dXNlcjpV"}},
+              {"response_metadata.next_cursor": "dXNlcjpV"}),
+    "notion": ({"object": "list", "results": _page(), "next_cursor": "fe2c", "has_more": True},
+               {"next_cursor": "fe2c", "has_more": True}),
+    "stripe": ({"object": "list", "data": _page(), "has_more": True, "url": "/v1/customers"}, {"has_more": True}),
+    "hubspot": ({"results": _page(), "paging": {"next": {"after": "NTI1", "link": "https://h/x?after=NTI1"}}},
+                {"paging.next.after": "NTI1"}),
+    "google": ({"files": _page(), "nextPageToken": "CkQK"}, {"nextPageToken": "CkQK"}),
+    "airtable": ({"records": _page(), "offset": "itr/rec"}, {"offset": "itr/rec"}),
+    "drf": ({"count": 443, "next": "https://x/?page=2", "previous": None, "results": _page()},
+            {"next": "https://x/?page=2"}),
+    "salesforce": ({"totalSize": 443, "done": False, "nextRecordsUrl": "/query/01gD-2000", "records": _page()},
+                   {"done": False, "nextRecordsUrl": "/query/01gD-2000"}),
+    "graphql": ({"data": {"projects": {"nodes": _page(), "pageInfo": {"hasNextPage": True, "endCursor": "eyJp"}}}},
+                {"data.projects.pageInfo.hasNextPage": True, "data.projects.pageInfo.endCursor": "eyJp"}),
+    "elasticsearch": ({"_scroll_id": "FGlu", "hits": {"total": {"value": 443}, "hits": _page()}},
+                      {"_scroll_id": "FGlu"}),
+}
+
+
+def test_paging_fields_of_real_api_shapes_reach_the_model():
+    for name, (payload, expected) in REAL_API_PAGING.items():
+        r = reduce_tool_result(payload, budget=20_000, select="id,name")
+        assert r.complete, name
+        assert json.loads(r.text)["_meta"]["source_paging"] == expected, name
+
+
+def test_envelope_fields_that_are_not_paging_stay_out():
+    payload = {"access_token": "SECRET", "request_id": "r1", "results": _page()}
+    r = reduce_tool_result(payload, budget=8_000)
+    assert "SECRET" not in r.text and r.paging == {}
+    # Fields inside the items are never read as the envelope's paging.
+    items = [{"id": i, "next_step": "call", "page": 3, "bio": "x" * 900} for i in range(20)]
+    assert reduce_tool_result({"results": items}, budget=8_000).paging == {}
+
+
 def test_a_very_long_cursor_is_left_to_the_caller():
     long_cursor = "c" * 2000
     payload = {"results": companies(11), "next_cursor": long_cursor, "has_more": True}

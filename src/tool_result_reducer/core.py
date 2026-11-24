@@ -31,6 +31,7 @@ Keep ``ReducedResult.raw`` wherever you store full payloads; only
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -87,29 +88,33 @@ _TOTAL_KEYS = (
     "count",
 )
 
-# Keys that conventionally carry pagination state in an API envelope. When a
-# result is rebuilt as {"items", "_meta"} these would otherwise be lost, and
-# with them the model's only way to ask for the next page. "page" and "count"
-# are absent on purpose: they are often containers or totals (see above).
-_PAGING_KEYS = (
-    "next_cursor",
-    "nextCursor",
-    "next_page_token",
-    "nextPageToken",
-    "next_page",
-    "nextPage",
-    "next_offset",
-    "nextOffset",
-    "next",
-    "has_more",
-    "hasMore",
-    "has_next",
-    "hasNext",
-    "offset",
-    "limit",
+# Words that mark a pagination field in an API envelope, matched against the
+# words of each key name ("nextPageToken" -> next, page, token). APIs name and
+# nest these freely (Slack's response_metadata.next_cursor, HubSpot's
+# paging.next.after, GraphQL's pageInfo.endCursor, Salesforce's
+# nextRecordsUrl), so the envelope is searched by name, not by a fixed list
+# of paths. "token" alone is not a paging word, so an envelope's access_token
+# is never brought back; "count" and "total" are totals, read separately.
+_PAGING_WORDS = frozenset(
+    {
+        "cursor",
+        "next",
+        "page",
+        "pages",
+        "offset",
+        "after",
+        "before",
+        "more",
+        "last",
+        "done",
+        "scroll",
+        "start",
+        "limit",
+        "continuation",
+    }
 )
-# Envelope objects that commonly hold the paging keys.
-_PAGING_CONTAINERS = ("page", "pagination", "meta", "paging", "links", "cursor")
+# At most this many paging fields go to the model; the caller gets them all.
+_PAGING_MAX_FIELDS = 12
 # A paging value longer than this is not offered to the model (a cursor that
 # would crowd out items); the caller still gets it on ReducedResult.paging.
 _PAGING_VALUE_CHARS = 500
@@ -162,11 +167,11 @@ class Messages:
         "these {count} as the full set; fetch more only if the tool allows "
         "(a page, offset or filter argument)."
     )
+    # Sent with every complete result that has paging fields, and re-sent on
+    # every later turn, so it is kept short.
     paging: str = (
-        "Every item of this page is included. `source_paging` holds the "
-        "source's pagination fields as it sent them; to get the next page, "
-        "call this tool again with the SAME arguments plus the page or cursor "
-        "argument the tool takes, set from these values."
+        "Whole page included. For the next page, call again with the same "
+        "arguments plus the tool's page or cursor argument, from source_paging."
     )
     # Placeholder: {chars} original size, formatted with thousands separators.
     outline: str = (
@@ -533,37 +538,39 @@ def _first_total(container: Any) -> Optional[int]:
     return None
 
 
+def _key_words(key: str) -> List[str]:
+    """``"nextPageToken"`` -> ``["next", "page", "token"]``; also snake_case."""
+    spaced = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", key)
+    return [w for w in re.split(r"[^A-Za-z0-9]+", spaced.lower()) if w]
+
+
 def _paging_fields(parsed: Any, source_path: Optional[str]) -> Dict[str, Any]:
     """The envelope's pagination fields, as ``{dot-path: scalar value}``.
 
-    Looked for beside the collection and at the top of the response, and one
-    level down in the usual containers (``pagination``, ``meta``, ``links``,
-    ...). Only scalars are kept; ``None`` is kept too, because
+    Walks the response around the collection (never into the collection or
+    any other list) and keeps scalar
+    values whose key name contains a paging word. ``None`` is kept, because
     ``"next_cursor": null`` is how many APIs say there are no more pages.
     """
     if not isinstance(parsed, dict):
         return {}
-    owner_path = source_path.rsplit(".", 1)[0] if source_path and "." in source_path else ""
-    owners = [owner_path] if owner_path else []
-    owners.append("")
     found: Dict[str, Any] = {}
 
-    def take(container: Any, prefix: str) -> None:
-        if not isinstance(container, dict):
-            return
-        for key in _PAGING_KEYS:
-            if key in container:
-                value = container[key]
-                if value is None or isinstance(value, (str, int, float, bool)):
-                    found.setdefault(f"{prefix}{key}", value)
+    def walk(node: Dict[str, Any], prefix: str, depth: int) -> None:
+        for key, value in node.items():
+            path = f"{prefix}{key}"
+            if path == source_path or isinstance(value, list):
+                continue
+            if isinstance(value, dict):
+                # One level past the deepest collection, so a sibling object
+                # of it (GraphQL's data.x.pageInfo.endCursor) is read.
+                if depth <= _MAX_SEARCH_DEPTH:
+                    walk(value, f"{path}.", depth + 1)
+                continue
+            if _PAGING_WORDS.intersection(_key_words(str(key))):
+                found[path] = value
 
-    for path in owners:
-        owner = parsed if not path else _resolve(parsed, path)
-        prefix = f"{path}." if path else ""
-        take(owner, prefix)
-        if isinstance(owner, dict):
-            for name in _PAGING_CONTAINERS:
-                take(owner.get(name), f"{prefix}{name}.")
+    walk(parsed, "", 1)
     return found
 
 
@@ -733,11 +740,13 @@ def reduce_tool_result(
     items, source_path, total_reported = _locate_collection(parsed)
     paging = _paging_fields(parsed, source_path) if items is not None else {}
     # Offered to the model only when short; see _PAGING_VALUE_CHARS.
-    paging_for_model = {
-        k: v
-        for k, v in paging.items()
-        if not (isinstance(v, str) and len(v) > _PAGING_VALUE_CHARS)
-    }
+    paging_for_model = dict(
+        list(
+            (k, v)
+            for k, v in paging.items()
+            if not (isinstance(v, str) and len(v) > _PAGING_VALUE_CHARS)
+        )[:_PAGING_MAX_FIELDS]
+    )
 
     if items is None:
         # Not a collection: a single large object, or not JSON at all.
